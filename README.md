@@ -1,5 +1,10 @@
 # easy-fetch-ajax
-Enhanced easy-fetch script for AJAX requests using Fetch API. Handles AJAX requests with various configuration options.
+Enhanced easy-fetch script for AJAX requests using Fetch API. Handles AJAX requests with various configuration options for Laravel. (Can work without laravel as well)
+Makes it easier to handle form submission using bootstrap / ajax 
+Utilizes Toastr, SweetAlert2 and Bootstrap
+
+Handles button loading, toastr messages and alerts when you submit your ajax request. Handles the validation messages sent from laravel and displays the main error message in the toastr message.
+
 
 I am looking to make this script better in the future. If you have any ideas, issues or need help let me know.
 
