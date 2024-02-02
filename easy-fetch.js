@@ -3,9 +3,9 @@
 /**
  * Enhanced easy-fetch script for AJAX requests using Fetch API.
  * Handles AJAX requests with various configuration options.
- * Version: 1.2.5
+ * Version: 1.2.8
  * Created by: Hubrizer
- * License: GPL-3.0
+ * License: GNU v3.0
  * Last Updated: 2021-09-30 10:00:00 UTC+05:30
  *
  * @param {Object} options - Configuration options for the AJAX request.
@@ -77,12 +77,16 @@ function easyAjax(options) {
     const abortController = new AbortController();
     settings.beforeSend = settings.beforeSend || defaultBeforeSend;
 
+    // Clear existing validation errors before starting a new AJAX request
+    clearValidationErrors(settings.container);
+
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
     let requestOptions = {
         method: settings.type,
         headers: {
-            'X-CSRF-TOKEN': settings.headers && settings.headers['X-CSRF-TOKEN'] ? settings.headers['X-CSRF-TOKEN'] : csrfToken
+            'X-CSRF-TOKEN': settings.headers && settings.headers['X-CSRF-TOKEN'] ? settings.headers['X-CSRF-TOKEN'] : csrfToken,
+            'X-Requested-With': 'XMLHttpRequest' // identify the request as an AJAX request
         },
         body: null,
         signal: abortController.signal
@@ -225,33 +229,32 @@ function processResponse(data, settings) {
 function handleError(error, settings) {
     console.error('Error in fetch operation:', error);
 
-    // Check if the error is a network error with a status of 422
-    if (error.message.startsWith('Network error: 422')) {
-        // Make sure the container is valid and error.responseJson is defined
-        if (settings.container && error.responseJson) {
-            settings.container.querySelectorAll('.validation-error').forEach(el => el.remove());
+    // Check if the error response is available and it's a 422 Unprocessable Content error
+    if (error.status === 422) {
+        // Parse the JSON response if not already parsed
+        error.json().then(errorJson => {
+            console.error('Validation errors:', errorJson);
 
-            Object.keys(error.responseJson).forEach(key => {
-                const inputElement = settings.container.querySelector(`[name="${key}"]`);
-                if (inputElement) {
-                    const errorMessage = error.responseJson[key][0]; // Assuming the error message is the first element of the array
-                    displayValidationError(inputElement, errorMessage);
-                }
-            });
-        }
+            // Use the detailed error message from Laravel for the toastr notification
+            toastr.error(errorJson.message);
+
+            // Iterate over the validation errors and display them next to the form elements
+            const errors = errorJson.errors;
+            for (const [field, messages] of Object.entries(errors)) {
+                const inputElement = settings.container.querySelector(`[name="${field}"]`);
+                displayValidationError(inputElement, messages[0]);
+            }
+        });
     } else {
-        // Handle other types of errors
-        if (settings.showToastrMsg && window.toastr) {
-            toastr.error(error.message || 'An error occurred');
-        }
+        // Fallback error handling for non-422 errors
+        toastr.error('An error occurred. Please try again.');
     }
 
+    // Invoke custom error handler if provided
     if (settings.customErrorHandler) {
         settings.customErrorHandler(error, settings);
-    } else {
-        if (settings.error) {
-            settings.error(error);
-        }
+    } else if (settings.error) {
+        settings.error(error);
     }
 }
 
@@ -261,20 +264,30 @@ function handleError(error, settings) {
  *  @param {string} message - The validation error message to display.
  */
 function displayValidationError(inputElement, message) {
-    // Remove existing validation error message if present
-    const existingError = inputElement.parentNode.querySelector('.invalid-feedback');
-    if (existingError) {
-        existingError.remove();
-    }
+    if (!inputElement) return; // Guard clause in case the input element isn't found
 
-    // Add Bootstrap 'is-invalid' class to the input
+    // Find the form group or input container
+    const formGroup = inputElement.closest('.form-group') || inputElement.parentNode;
+
+    // Remove any existing error message first
+    const existingError = formGroup.querySelector('.invalid-feedback');
+    if (existingError) existingError.remove();
+
+    // Add Bootstrap 'is-invalid' class to the input element
     inputElement.classList.add('is-invalid');
 
-    // Create and insert the new error message
+    // Create the error message element
     const errorDiv = document.createElement('div');
     errorDiv.classList.add('invalid-feedback');
-    errorDiv.textContent = message;
-    inputElement.parentNode.appendChild(errorDiv); // Append the error message as the last child of the input's parent
+    errorDiv.innerText = message; // Set the error message text
+
+    // Insert the error message element into the DOM, preferably inside the form group
+    formGroup.appendChild(errorDiv);
+}
+
+function clearValidationErrors(container) {
+    container.querySelectorAll('.invalid-feedback').forEach(element => element.remove());
+    container.querySelectorAll('.is-invalid').forEach(element => element.classList.remove('is-invalid'));
 }
 
 /**
