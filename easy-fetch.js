@@ -1,12 +1,15 @@
 'use strict';
 
 /**
- * Enhanced easy-fetch script for AJAX requests using Fetch API.
- * Handles AJAX requests with various configuration options.
- * Version: 1.2.8
+ * An AJAX utility function designed for making asynchronous HTTP requests.
+ * It provides configurable options for handling different types of requests,
+ * UI feedback during requests, error handling, data processing, and more.
+ * This function utilizes the Fetch API for making the actual HTTP requests.
+ *
+ * Version: 2.0.0
  * Created by: Hubrizer
  * License: GNU v3.0
- * Last Updated: 2021-09-30 10:00:00 UTC+05:30
+ * Last Updated: 2024-02-03 10:00:00 UTC+05:30
  *
  * @param {Object} options - Configuration options for the AJAX request.
  * @param {string} options.type - HTTP method type (e.g., 'GET', 'POST').
@@ -30,20 +33,18 @@
  * @param {Function|null} options.customSuccessHandler - Custom success handler function.
  */
 
-/**
- * Default options for the easyAjax function.
- * @param options
- */
+// Defines the main function for making AJAX requests with configurable options
 function easyAjax(options) {
+    // Sets default values for various AJAX request options
     const defaults = {
-        type: 'GET',
-        container: document.body,
-        blockUI: true,
-        disableButton: true,
-        buttonSelector: "[type='submit']",
-        dataType: "json",
-        showToastrMsg: true,
-        toastrOptions: {
+        type: 'GET', // Default HTTP method
+        container: document.body, // Default container element for displaying messages or loading indicators
+        blockUI: true, // Blocks UI to prevent user interaction during the request
+        disableButton: true, // Disables the submit button to prevent multiple submissions
+        buttonSelector: "[type='submit']", // Selector for the submit button in the form
+        dataType: "json", // Expected data type of the response from the server
+        showToastrMsg: true, // Shows toastr messages for user feedback
+        toastrOptions: { // Default options for toastr messages
             "closeButton": true,
             "debug": false,
             "newestOnTop": true,
@@ -60,68 +61,94 @@ function easyAjax(options) {
             "showMethod": "fadeIn",
             "hideMethod": "fadeOut"
         },
-        showSwalMsg: true,
-        swalOptions: {/* Default swal options */},
-        redirect: true,
-        data: {},
-        file: false,
-        formReset: false,
-        async: true,
-        debug: false,
-        timeout: 5000,
-        customErrorHandler: null,
-        customSuccessHandler: null
+        showSwalMsg: true, // Shows SweetAlert messages for alerts or confirmations
+        swalOptions: {}, // Default options for SweetAlert
+        redirect: true, // Redirects to another URL on successful request completion
+        data: {}, // Data to be sent in the request
+        file: false, // Indicates if the request involves file uploads
+        formReset: false, // Resets the form after successful submission
+        async: true, // Makes the request asynchronous
+        debug: false, // Enables debug mode for logging
+        timeout: 5000, // Sets a timeout for the request
+        customErrorHandler: null, // Allows for a custom error handling function
+        customSuccessHandler: null // Allows for a custom success handling function
     };
 
+    // Merge default options with user-provided options to form the final settings for the AJAX request
     const settings = Object.assign({}, defaults, options);
-    const abortController = new AbortController();
+
+    // Assigns a default beforeSend function if one is not provided in the settings.
+    // This function is responsible for pre-request actions like disabling the submit button.
     settings.beforeSend = settings.beforeSend || defaultBeforeSend;
 
-    // Clear existing validation errors before starting a new AJAX request
+    // Initialize an AbortController to manage request cancellation, providing a way to abort the request if needed
+    const abortController = new AbortController(); // Used to cancel the request
+
+    // Clear existing validation errors in the form container before making a new request
     clearValidationErrors(settings.container);
 
+    // CSRF token setup for secure AJAX requests, particularly important in frameworks like Laravel
     const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
+    /// Setup request options for the Fetch API, including method, headers, and body
     let requestOptions = {
-        method: settings.type,
+        method: settings.type, // The HTTP method type for the request (e.g., 'GET', 'POST')
         headers: {
             'X-CSRF-TOKEN': settings.headers && settings.headers['X-CSRF-TOKEN'] ? settings.headers['X-CSRF-TOKEN'] : csrfToken,
-            'X-Requested-With': 'XMLHttpRequest' // identify the request as an AJAX request
+            'X-Requested-With': 'XMLHttpRequest' // Necessary for Laravel to recognize the request as AJAX
         },
-        body: null,
-        signal: abortController.signal
+        body: null, // The request body, which will be set for methods that include data (like 'POST')
+        signal: abortController.signal // Provides a way to cancel the request using the AbortController
     };
 
+    // Prepare the request body for methods that include data, setting the appropriate headers and body content
     if (settings.type.toUpperCase() !== 'GET' && settings.type.toUpperCase() !== 'HEAD') {
         if (settings.file) {
+            // If the request involves file upload, use FormData to construct the request body
             requestOptions.body = createFormData(settings);
         } else if (typeof settings.data === 'string') {
+            // For URL-encoded data, set the content type header and use the string as the body
             requestOptions.headers['Content-Type'] = 'application/x-www-form-urlencoded';
             requestOptions.body = settings.data;
         } else {
+            // For JSON data, set the content type header to 'application/json' and stringify the data object
             requestOptions.headers['Content-Type'] = 'application/json';
             requestOptions.body = JSON.stringify(settings.data);
         }
     }
 
+    // If a beforeSend function is provided in the settings, call it with the settings as its argument
+    // This is typically used for actions like showing a loader or disabling a submit button before the request starts
     if (settings.beforeSend && typeof settings.beforeSend === 'function') {
         settings.beforeSend(settings);
     } else {
+        // If no beforeSend function is provided, call the defaultBeforeSend function
         defaultBeforeSend(settings);
     }
 
+    // Set a timeout to abort the request if it exceeds the specified time limit, preventing the request from hanging indefinitely
     const timeoutId = setTimeout(() => abortController.abort(), settings.timeout);
 
+    // Perform the fetch request with the prepared options
     fetch(settings.url, requestOptions)
-        .then(validateResponse)
-        .then(processContentType)
-        .then(data => processResponse(data, settings))
-        .catch(error => handleError(error, settings))
+        .then(response => {
+            if (!response.ok) {
+                // If the response status code indicates a failure (not in the range 200-299), throw an error
+                throw { response }; // Throws an object containing the response for further error handling
+            }
+            return response; // Pass the successful response to the next .then() for further processing
+        })
+        .then(validateResponse) // Validate the response and check for any server-side errors
+        .then(processContentType) // Determine the content type of the response and process accordingly (e.g., JSON, HTML)
+        .then(data => processResponse(data, settings)) // Handle the processed response data based on the settings
+        .catch(error => handleError(error, settings)) // Catch and handle any errors that occurred during the request or processing stages
         .finally(() => {
-            clearTimeout(timeoutId);
+            clearTimeout(timeoutId); // Clear the timeout to prevent aborting the request after completion
             if (settings.disableButton) {
+                // Re-enable the submit button if it was disabled before the request
                 toggleButtonLoading(settings.buttonSelector, false, settings);
             }
+            // Call the complete callback function if provided in the settings
             if (settings.complete) settings.complete();
         });
 }
@@ -169,6 +196,7 @@ function defaultBeforeSend(settings) {
         toggleButtonLoading(settings.buttonSelector, true, settings);
     }
 }
+
 /**
  * Validates the response from the fetch request.
  * @param {Response} response - The Response object from the fetch request.
@@ -227,34 +255,37 @@ function processResponse(data, settings) {
  *  @param {Object} settings - Settings object from the easyAjax function.
  */
 function handleError(error, settings) {
-    console.error('Error in fetch operation:', error);
+    // Check if the error object contains a 'response' property
+    if (error.response) {
+        const { response } = error; // Destructure the response from the error object
 
-    // Check if the error response is available and it's a 422 Unprocessable Content error
-    if (error.status === 422) {
-        // Parse the JSON response if not already parsed
-        error.json().then(errorJson => {
-            console.error('Validation errors:', errorJson);
+        // Handle specific HTTP error statuses (e.g., 422 Unprocessable Entity)
+        if (response.status === 422) {
+            response.json().then(errorJson => {
+                // Display validation errors
 
-            // Use the detailed error message from Laravel for the toastr notification
-            toastr.error(errorJson.message);
+                // Use toastr to display a summary error message
+                toastr.error(errorJson.message || 'Validation errors occurred.');
 
-            // Iterate over the validation errors and display them next to the form elements
-            const errors = errorJson.errors;
-            for (const [field, messages] of Object.entries(errors)) {
-                const inputElement = settings.container.querySelector(`[name="${field}"]`);
-                displayValidationError(inputElement, messages[0]);
-            }
-        });
+                // Display validation errors next to the corresponding form elements
+                if (errorJson.errors) {
+                    Object.entries(errorJson.errors).forEach(([field, messages]) => {
+                        const inputElement = settings.container.querySelector(`[name="${field}"]`);
+                        if (inputElement) {
+                            displayValidationError(inputElement, messages[0]);
+                        }
+                    });
+                }
+            }).catch(jsonError => {
+                console.error('Error parsing JSON response:', jsonError);
+            });
+        } else {
+            // Handle other HTTP errors
+            toastr.error('An unexpected error occurred.');
+        }
     } else {
-        // Fallback error handling for non-422 errors
-        toastr.error('An error occurred. Please try again.');
-    }
-
-    // Invoke custom error handler if provided
-    if (settings.customErrorHandler) {
-        settings.customErrorHandler(error, settings);
-    } else if (settings.error) {
-        settings.error(error);
+        // Handle non-HTTP errors (e.g., network issues)
+        toastr.error('A network error occurred. Please check your connection and try again.');
     }
 }
 
@@ -266,11 +297,8 @@ function handleError(error, settings) {
 function displayValidationError(inputElement, message) {
     if (!inputElement) return; // Guard clause in case the input element isn't found
 
-    // Find the form group or input container
-    const formGroup = inputElement.closest('.form-group') || inputElement.parentNode;
-
     // Remove any existing error message first
-    const existingError = formGroup.querySelector('.invalid-feedback');
+    const existingError = inputElement.parentNode.querySelector('.invalid-feedback');
     if (existingError) existingError.remove();
 
     // Add Bootstrap 'is-invalid' class to the input element
@@ -281,8 +309,8 @@ function displayValidationError(inputElement, message) {
     errorDiv.classList.add('invalid-feedback');
     errorDiv.innerText = message; // Set the error message text
 
-    // Insert the error message element into the DOM, preferably inside the form group
-    formGroup.appendChild(errorDiv);
+    // Insert the error message element into the DOM
+    inputElement.parentNode.appendChild(errorDiv);
 }
 
 function clearValidationErrors(container) {
