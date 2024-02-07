@@ -6,7 +6,7 @@
  * UI feedback during requests, error handling, data processing, and more.
  * This function utilizes the Fetch API for making the actual HTTP requests.
  *
- * Version: 2.0.0
+ * Version: 2.0.1
  * Created by: Hubrizer
  * License: GNU v3.0
  * Last Updated: 2024-02-03 10:00:00 UTC+05:30
@@ -235,16 +235,23 @@ async function processContentType(response) {
  *  @param {Object} settings - Settings object from the easyAjax function.
  */
 function processResponse(data, settings) {
-    if (data && !data.error) {
-        handleSuccess(data, settings);
-    }
-
-    // Existing logic
-    if (settings.customSuccessHandler) {
-        settings.customSuccessHandler(data, settings);
+    if (data.status === 'fail') {
+        // Create a custom error object to pass to handleError
+        const error = {
+            response: {
+                status: 409, // You can use the 409 Conflict status or a custom status code
+                json: () => Promise.resolve(data) // Mimic the json() function of the Fetch API's Response object
+            }
+        };
+        handleError(error, settings);
     } else {
-        if (settings.success) {
-            settings.success(data);
+        // Handle the success case
+        if (settings.customSuccessHandler) {
+            settings.customSuccessHandler(data, settings);
+        } else {
+            if (settings.success) {
+                settings.success(data);
+            }
         }
     }
 }
@@ -255,19 +262,11 @@ function processResponse(data, settings) {
  *  @param {Object} settings - Settings object from the easyAjax function.
  */
 function handleError(error, settings) {
-    // Check if the error object contains a 'response' property
     if (error.response) {
-        const { response } = error; // Destructure the response from the error object
-
-        // Handle specific HTTP error statuses (e.g., 422 Unprocessable Entity)
-        if (response.status === 422) {
-            response.json().then(errorJson => {
-                // Display validation errors
-
-                // Use toastr to display a summary error message
+        error.response.json().then(errorJson => {
+            if (error.response.status === 422) {
+                // Handle validation errors
                 toastr.error(errorJson.message || 'Validation errors occurred.');
-
-                // Display validation errors next to the corresponding form elements
                 if (errorJson.errors) {
                     Object.entries(errorJson.errors).forEach(([field, messages]) => {
                         const inputElement = settings.container.querySelector(`[name="${field}"]`);
@@ -276,13 +275,17 @@ function handleError(error, settings) {
                         }
                     });
                 }
-            }).catch(jsonError => {
-                console.error('Error parsing JSON response:', jsonError);
-            });
-        } else {
-            // Handle other HTTP errors
-            toastr.error('An unexpected error occurred.');
-        }
+            } else if (error.response.status === 409) {
+                // Handle conflict errors
+                // You can display a generic message or a specific message from the server if available
+                toastr.error(errorJson.message || 'A conflict occurred with your request.');
+            } else {
+                // Handle other HTTP errors
+                toastr.error('An unexpected error occurred.');
+            }
+        }).catch(jsonError => {
+            console.error('Error parsing JSON response:', jsonError);
+        });
     } else {
         // Handle non-HTTP errors (e.g., network issues)
         toastr.error('A network error occurred. Please check your connection and try again.');
