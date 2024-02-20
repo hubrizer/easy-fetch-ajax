@@ -6,7 +6,7 @@
  * UI feedback during requests, error handling, data processing, and more.
  * This function utilizes the Fetch API for making the actual HTTP requests.
  *
- * Version: 2.0.1
+ * Version: 2.0.2
  * Created by: Hubrizer
  * License: GNU v3.0
  * Last Updated: 2024-02-03 10:00:00 UTC+05:30
@@ -252,6 +252,7 @@ function processResponse(data, settings) {
             if (settings.success) {
                 settings.success(data);
             }
+            handleSuccess(data, settings);
         }
     }
 }
